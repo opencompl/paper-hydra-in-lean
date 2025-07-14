@@ -8,7 +8,7 @@
   \def\paperversion{draft}
 \fi
 
-\documentclass[review, anonymous, sigplan]{acmart}
+\documentclass[review, anonymous, acmsmall]{acmart}
 
 \def\acmversionanonymous{anonymous}
 \def\acmversionjournal{journal}
@@ -241,10 +241,16 @@
 Peephole rewriting is a key workhorse in optimizing compilers to simplify and canonicalize instruction sequences.
 Recently, approaches to peephole rewriting have centered on automatically generating thousands of peephole rewrites,
 with synthesis, e-graphs, and related approaches.
+%
 We tackle the problem of \emph{proving} these generated rewrites correct.
-Toward this, we reimplement the recent Hydra synthesis algorithm in the Lean proof assistant.
-We expose this framework as reusable tactics, which can be used for generalizing arbitrary bitvector theorems.
-Our work provides foundational tools for building large-scale, end-to-end verified, peephole rewriter systems.
+%
+Toward this, we reimplement the recent Hydra synthesis algorithm in the Lean
+proof assistant. We expose this framework as reusable tactics, which can be
+used for generalizing theorems about arbitrary types that are expressible as
+bitvectors.
+%
+Our work provides foundational tools for building large-scale, end-to-end
+verified, peephole rewriter systems.
 \end{abstract}
 
 % Only add ACM notes and keywords in camera ready version
@@ -289,14 +295,17 @@ Our work provides foundational tools for building large-scale, end-to-end verifi
 \section{Introduction}
 Our contributions are:
 \begin{itemize}
-	\item Extensions to the Lean proof assistant to automatically derive bijections
-      from parametrically finite structures to bitvectors.
+	\item Extensions to the Lean proof assistant to automatically derive encoding
+    and decoding functions from parametrically finite structures to bitvectors,
+    as well as a compositional translation of expressions to bitvector
+    expressions.
 	\item Exploiting these extensions to create \bvgeneralize,
     a tactic to automatically generalize theorems over parametrically finite structures.
 	\item Improvements over the Hydra synthesis algorithm,
     which we use to perform the generalization.
-  \item Suggestions for exposing nondeterministic choice in the Hydra algorithm
-    to end-users, allowing interactive guidance of the generalization process.
+  \item A user interface that allows for exposing nondeterministic choice in the
+    Hydra algorithm to end-users, allowing interactive guidance of the
+    generalization process.
 \end{itemize}
 
 \section{Conclusion}

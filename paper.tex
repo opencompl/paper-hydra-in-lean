@@ -141,6 +141,9 @@
 \newdelimitedcommand{toolname}{Tool}
 \newcommand{\bvgeneralize}{\texttt{bv\_generalize}}
 
+\newcommand{\blockmath}[1]{\[\mathsf{#1}\]}
+\newcommand{\inline}[1]{$\mathsf{#1}$}
+\newcommand{\notimplies}{\;\not\!\!\!\implies}
 
 \usepackage{booktabs}
 \newcommand{\ra}[1]{\renewcommand{\arraystretch}{#1}}
@@ -293,7 +296,51 @@ verified, peephole rewriter systems.
 \maketitle
 
 \section{Introduction}
-Our contributions are:
+Consider a program containing the pattern: \inline{x * 8}, where \inline{x} is an input variable. When building an optimizing compiler, the developer might notice that this program can be made more efficient by replacing the multiplication with a left shift operation as:  
+\[\mathsf{x * 8  \implies x \ll 3}\] 
+This type of rewrite, where compilers transform small code sections or patterns into logically equivalent but more efficient forms, is known as a \textit{peephole optimization}~\cite{mckeemanPeephole1965}. Peephole optimizations are prominent in many modern compiler frameworks, including LLVM \cite{lattner_llvm_2004}, which has over a thousand of them \cite{menendez_termination-checking_2016}.  
+
+Going further, the developer might notice that this rewrite does not apply only when we multiply the variable \inline{x} by \inline{8}, but when we multiply \inline{x} by any constant \inline{C} which is a power of two. The full rewrite pattern then becomes:
+% sid: Use \mathsf{IsPowerOf2} for better
+% formatting.
+    \blockmath{IsPowerOf2(C) \models x * C \implies x \ll \log_2 C}
+where $\mathsf{IsPowerOf2(C)}$ is called the \textit{precondition} for the rewrite. 
+
+The developer has now transformed the initial rewrite from its original form, containing the concrete constants \inline{8} and \inline{3}, to a \textit{generalized} form containing a symbolic constant \inline{C} representing integers of an arbitrary width. This generalized rewrite can match more patterns across input programs and lead to more efficient code. 
+
+In many compiler development workflows, deriving a rewrite from an input program and making it more general is manual, error-prone, and a major source of bugs \cite{yang_finding_2011}. This has led to the creation of tools like Souper \cite{sasnauskas_souper_2018}, for automatically finding optimizations, and Alive2 \cite{lopes_provably_2015, lopes_alive2_2021}, which can verify a peephole optimization or return a counterexample. More recently, Mukherjee and Regehr \cite{mukherjee_hydra_2024} introduced Hydra for automatically generalizing optimizations. 
+
+These existing tools operate on LLVM intermediate representation (IR) and rely on satisfiability modulo theories (SMT) solvers for correctness. However, SMT solvers are large and complex systems that implement several heuristics for scale and performance. As a result, they may contain bugs that lead to incorrect results \cite{barbosa_challenges_2023}. For example, while building Alive2, Lopes et al. \cite{lopes_alive2_2021} encountered bugs in the Z3 SMT solver \cite{de_moura_z3_2008}. A more recent fuzzing campaign \cite{winterer_validating_2024} also found 53 correctness bugs in Z3 and the cvc5 SMT solver~\cite{barbosa_cvc5_2022}. 
+
+To increase confidence in their output, these solvers produce correctness proofs that can be reconstructed by proof assistants for verification. However, these proofs are brittle, and various works have encountered bugs while reconstructing proofs produced by SMT solvers \cite{blanchette_extending_2011} \cite{bohme_fast_2010} \cite{bohme_reconstruction_2011}. In essence, these automation tools, Souper, Alive, and Hydra, which rely on SMT solvers' results for correctness, are limited by their solvers' capability.
+
+
+This limitation highlights an opportunity for automation tools that can guide compiler developers and produce \textit{provably correct} results. We believe such tools will play an increasingly important role as domain-specific accelerators continue to emerge and rely on compilers to produce fast and correct code to effectively exploit new instruction sets. 
+
+In this work, we develop a tool for generalizing peephole rewrites in Lean \cite{moura_lean_2021}, a functional programming language and interactive theorem prover. We rely on existing infrastructure \cite{bhat_verifying_2024} to convert peephole rewrites involving arithmetic operations over integers in LLVM into fixed-width theorems involving bitvector equalities, and attempt to find a width-independent version of the theorem containing symbolic constants. Crucially, we ensure the reliability of our results by performing SMT queries on top of a verified SAT proof checker in Lean.
+
+By operating on bitvector theorems, we extend the potential applications of our work beyond peephole optimizations in compilers to other areas that involve proving theorems over bitvectors, such as hardware and software verification \cite{hadarean_fine_2015}, as a generalized theorem can be used to construct larger, more complex proofs. However, as we primarily target compiler developers writing peephole optimizations, we refer to these theorems as \textit{bitvector rewrites} in this work.
+
+In addition, as part of providing this generalization feature, we implement several reusable SMT-based algorithms for reasoning over bitvectors on top of a verified SAT checker. These include:  
+%Sid:  Also, the exists-forall algorithm works *in general*
+% for BV exists forall problems. Emphasize this, and say that
+% we then use it for constant synthesis.
+% Define what exists-forall is :)
+\begin{itemize}
+    \item An algorithm for solving \textbf{exists-forall} problems \cite{dutertre_solving_2015}, which determines the satisfiability of formulas of the form \inline{\exists x\ \forall y\ \Phi(x, y)}, by finding values of \inline{x} that ensure the formula holds for all possible values of \inline{y}. 
+    
+    We use this algorithm to synthesize new constant values in a lower bitwidth than the original rewrite and improve the performance of our SMT queries. However, exists-forall algorithms have applications in several other areas, including hardware reverse engineering \cite{gascon_template-based_2014} and designing cyber-physical systems~\cite{cheng_efsmt_2013}. 
+  
+
+    \item Top-down \textbf{deductive search} and bottom-up \textbf{enumerative search} methods for synthesizing programs that perform arithmetic and bitwise operations on bitvectors, given a set of input-output examples. 
+    
+    \item  An algorithm for \textbf{synthesizing preconditions} over the symbolic constants in a bitvector rewrite under which the rewrite is always valid. 
+    % Same for model counting: works in general, used
+    % for ... Define what model counting is?
+    \item A method for determining how many unique assignments of variables satisfy a bitvector formula, also known as \textbf{model counting}. Our initial generalization procedure used this method to generate weak and compact preconditions over symbolic constants, but we have optimized the process by removing this step. However, we retain our model counting implementation for reuse in other relevant applications, including cryptography \cite{beck_automating_2020} and probabilistic inference \cite{sang_performing_2005}. 
+\end{itemize}
+
+Overall, our contributions are:
 \begin{itemize}
 	\item Extensions to the Lean proof assistant to automatically derive encoding
     and decoding functions from parametrically finite structures to bitvectors,
@@ -307,6 +354,616 @@ Our contributions are:
     Hydra algorithm to end-users, allowing interactive guidance of the
     generalization process.
 \end{itemize}
+
+
+Through this work, we contribute to our vision of how compilers should be written in the future, where compiler engineers use automated and interactive theorem provers to guide their development and produce fast and provably correct programs.
+
+\section{Generalizing Bitvector Proofs}
+
+We have developed a tool for generalizing peephole rewrites involving arithmetic operations on integers. For example, given this trivial rewrite, where \inline{x} and \inline{y} are input variables representing any 32-bit integer:
+\blockmath{(x - 1) - (y - 257) \implies x - y + 256}
+It will return a more general rewrite that is valid for integers of any bitwidth as:  
+\blockmath{(x - C_1) - (y - C_2) \implies x - y + (C_2 - C_1)}
+The variables \inline{C_1} and \inline{C_2} in this rewrite are \textit{symbolic} constants or variables that represent \textit{literal} or \textit{concrete} constant values at an arbitrary bitwidth. 
+
+We accept peephole rewrites as theorems involving bitvector equalities, and aim to derive a valid arbitrary-width theorem from a given fixed-width theorem. Our interface provides a \texttt{\#generalize} command, which users can invoke for the above rewrite in a Lean environment as:
+\blockmath{\texttt{\#generalize}\ (x - 1) - (y - 257) = x - y + 256}
+assuming they have previously declared \inline{x} and \inline{y} as 32-bit vectors.
+
+As stated previously, while users can invoke this command for generic tasks that require reasoning over bitvector theorems involving equalities, we refer to these theorems as \textit{bitvector rewrites}, since we primarily target compiler development workflows comprising peephole rewrites.
+
+Next, we provide an overview of the process of generalizing a bitvector rewrite, followed by a detailed description of the various steps. 
+
+\subsection{Overview}
+
+At a high level, generalizing a bitvector rewrite involves the following steps:
+\begin{itemize}
+    \item \textbf{Introducing Symbolic Constants.} First, we replace the concrete constants in the rewrite with symbolic ones on the left-hand side (LHS) and right-hand side (RHS). This is important for returning an arbitrary-width result.  
+    
+    In the running example, we introduce symbolic constants to get a new rewrite:
+                \blockmath{(x - C_1)  - (y - C_2)  = x - y + C_3}
+    where \inline{C_1 \mapsto 1}, \inline{C_2 \mapsto 257}, and \inline{C_3 \mapsto 256}. We map these symbolic constants to their concrete constant values, as the concrete values guide synthesis as input-output examples.
+
+    \item \textbf{Narrowing}. Next, we attempt to synthesize new literal values for the symbolic constants in a narrow bitwidth for which the rewrite is still valid. This step improves the performance of our bitvector computations and SMT queries in subsequent synthesis steps. We set eight bits as the desired narrow width in our tool and attempt to synthesize new 8-bit values for rewrites involving bitvectors wider than the desired width. 
+    
+    In our example, we might get new 8-bit values such that \inline{C_1 \mapsto 1}, \inline{C_2 \mapsto 10}, and \inline{C_3 \mapsto 9}. We continue processing in the original bitwidth if this step fails.
+    
+    \item \textbf{Constant Expressions Synthesis.} We then attempt to synthesize functions that express the symbolic constants on the RHS of the rewrite in terms of the LHS ones. In our example, the goal is to find a function \inline{f} such that \inline{C_3 = f(C_1, C_2)}. 
+    
+    We use the concrete values for the symbolic constants in the original or narrow width as input-output examples for this synthesis task. The search space comprises arithmetic and bitwise operators, and we explore it using deductive and enumerative search. 
+    
+    Using the constants from the previous step as input-output examples, we get a candidate function:  
+    \blockmath{C_3 = f(C_1, C_2) = C_2 - C_1}
+    which we then substitute into our rewrite as:
+    \blockmath{(x - C_1)  - (y - C_2)  = x - y + (C_2 - C_1)}
+    We return an error and terminate the generalization process at this stage if we cannot synthesize a candidate function for any symbolic constant on the RHS, as this step is \textit{necessary} for generalization.
+    
+    Often, this step is also \textit{sufficient} for generalization. That is, after substituting in candidate functions for the symbolic constants on the RHS, we may have found a rewrite that is valid for all possible values of the input variables and symbolic constants in the processing bitwidth.
+
+    We determine whether this step is sufficient by making an SMT query for an assignment of values to the input variables and symbolic constants that invalidate the rewrite. In our example, we ask for an assignment that satisfies:
+            \blockmath{(x - C_1)  - (y - C_2) \neq x - y + (C_2 - C_1)}
+    If none exist, we return the rewrite with the substituted candidate function(s) as a more general form of the input, which is the case in this example. 
+
+    When multiple candidate functions exist for the symbolic constants on the RHS of a rewrite, we substitute each combination of candidates into the rewrite. We then run SMT queries to check if any combination produces a general form that is valid for all possible input values.
+
+
+    \item \textbf{Precondition Synthesis.} Finally, if we cannot find a combination of candidate functions from the previous step that will make the rewrite valid for all inputs, we attempt to generate the preconditions that make a generalization valid. 
+    
+    For example, consider this bitvector rewrite over 32-bit variables:
+    \blockmath{(x \And 7\ ||\ y \And 8) \And 7 = x \And 7}
+    It has a more general form:
+    \blockmath{C_1 \And C_2 = 0 \models (x \And C_1\ ||\ y \And C_2) \And C_1 = x \And C_1}
+    where we have replaced the concrete constants with symbolic ones, \inline{C_1} and \inline{C_2}. This rewrite has a precondition: \inline{C_1 \And C_2 = 0}, indicating that the generalization is valid only when the condition is met.
+
+    We attempt to synthesize preconditions for each combination of candidate functions from the previous step and terminate the process once we have found a valid one. A precondition \inline{PC} is valid for a rewrite \inline{R} only when there is no assignment of values to the variables in the rewrite that satisfy the formula:
+    \blockmath{PC \land \neg R}
+    indicating that the rewrite is always valid when \inline{PC} is true. In addition, the precondition must be true for at least one assignment of its symbolic variables.
+\end{itemize}
+
+We base our implementation on the description by Mukherjee and Regehr for Hydra~\cite{mukherjee_hydra_2024}, which generalizes peephole rewrites in LLVM. However, we develop new methods and optimizations to address bottlenecks in their algorithm and improve generalization performance. Next, we describe our implementation in detail. 
+
+\subsection{Symbolic Constants and Narrowing}
+We replace the concrete constants in a rewrite with symbolic constants as the first generalization step. This helps us find a width-independent version of a rewrite if it exists. In addition, the symbolic constants form the variables in our SMT queries alongside the input variables in a rewrite. 
+
+We then attempt to improve performance by reducing the bitwidth of rewrites involving values wider than eight bits, as SMT queries complete faster at lower bitwidths.\ This narrowing process requires synthesising new 8-bit literal values that maintain the rewrite's correctness and can guide subsequent synthesis steps as input-output examples. 
+
+Returning to the earlier example where we attempt to generalize the rewrite over 32-bit vectors:
+\blockmath{(x - 1) - (y - 257) = x - y + 256}
+and introduce symbolic constants as:
+\blockmath{(x - C_1) - (y - C_2) = x - y + C_3}
+In this narrowing step, we aim to synthesize 8-bit vectors for \inline{C_1}, \inline{C_2}, and \inline{C_3} for which the rewrite is still valid over all possible values of \inline{x} and \inline{y}. We frame this as an SMT query, where we are attempting to find values that satisfy the formula:
+   \blockmath{\exists (C_1, C_2, C_3)\ \forall (x, y)\ ((x + C_1)  - (y - C_2) = x - y + C_3)}
+That is, we want to find an assignment of values to \inline{C_1}, \inline{C_2}, and \inline{C_3} that satisfy the formula for all values of \inline{x} and \inline{y}. 
+This formula, containing the \inline{\exists}  existential and \inline{\forall} universal quantifiers, represents an \textit{exists-forall} problem \cite{dutertre_solving_2015}. However, SMT solvers typically perform poorly on queries containing universal quantifiers. As a result, we tackle exists-forall problems using an algorithm that replaces the universal quantifier with a counterexample-driven loop. We describe this algorithm in the next section. 
+
+
+\subsubsection{Solving Exists-ForAll Problems}
+\label{cegis}
+We implement the counter-example guided inductive synthesis (CEGIS) algorithm described by Dutertre \cite{dutertre_solving_2015} to synthesize new constants in a narrow width. The algorithm works as follows: 
+\begin{itemize}
+    \item First, we create an SMT formula from the input rewrite and ask the solver for any assignment of values to the variables (input variables and symbolic constants) that satisfies the formula. In our example, we ask for any assignment of 8-bit values to \inline{x}, \inline{y}, \inline{C_1}, \inline{C_2}, and \inline{C_3} that satisfies the formula:
+   \blockmath{\exists (C_1, C_2, C_3, x, y)\ ((x + C_1)  - (y - C_2)  = x - y + C_3)}
+
+    This generates a candidate solution for the existential variables, \inline{C_1}, \inline{C_2}, and \inline{C_3}, and we terminate the procedure at this step if there is none. 
+    
+    \item Next, we determine if the solution holds for all possible values of the universal variables \inline{x} and \inline{y}. To do this, we first substitute \textit{only} the assignment for the existential variable values from the previous step into the formula. 
+    
+    For example, the solver might return the assignment: \inline{C_1 \mapsto 1}, \inline{C_2 \mapsto 10}, and \inline{C_3 \mapsto 9}, which we substitute into the rewrite as:
+       \blockmath{(x + 1)  - (y - 10)  = x - y + 9}
+    We then create a formula that asks the solver for an assignment of values to the universal variables that satisfies the \textit{negation} of the substituted rewrite: 
+        \blockmath{\exists(x, y)\ ((x + 1)  - (y - 10)  \neq x - y + 9)}
+    If we can find an assignment that satisfies this negation, then the current solution for the existential variables does not hold for all possible values of the universal variables, and we continue the process. We refer to this satisfying assignment as our \textit{counterexample}. 
+    
+    Otherwise, no assignment satisfies the negated formula, as in this example, and we return the values for the existential variables as a valid solution. 
+    
+    \item If a counterexample exists, we ensure that any subsequent candidate solutions for the existential variables must also satisfy the rewrite when the universal variables are set to the counterexample values. We do this by adding a new constraint that incorporates the counterexample into the original formula. 
+    
+    For example, if the solver had returned the assignment: \inline{x \mapsto 3} and \inline{y \mapsto 5} as a counterexample from the previous step, we want a new candidate solution for the existential variables that satisfies the formula:
+    \begin{align*} 
+    \mathsf{\exists(C_1, C_2, C_3, x, y)\ (((x + C_1)  - (y - C_2)  = x - y + C_3)} \\
+    \mathsf{\land \ ((3 + C_1)  - (5 - C_2) = 3 - 5 + C_3))}
+    \end{align*}
+    This ensures that the solver does not return a solution for which we have found a counterexample. We return to the first step of the algorithm with this new formula as the input and repeat the process until there are no more counterexamples or the solver cannot find a solution for the existential variables.
+\end{itemize}
+
+We describe this process in pseudocode in \hyperref[alg:exists-forall]{Algorithm 1}. The function accepts the original rewrite and the set of existential and universal variables as inputs, and returns a valid solution for the existential variables if one exists. 
+
+\begin{algorithm} 
+\caption{Exists-ForAll Algorithm}\label{alg:exists-forall}
+\begin{algorithmic}[1]
+\Procedure{ExistsForAll}{Rewrite, ExistsVars, ForAllVars}
+\State CurrentFormula $\gets$ Rewrite
+\State Assignment $\gets$ \{\}
+
+\While{True}
+\State Assignment $\gets$ \textsc{Solve}(CurrentFormula) \Comment{Find a candidate solution.}
+\If{Assignment is empty}
+\State \textbf{break} \Comment{No assignment satisfies the constraints}
+\EndIf
+\State SubstFormula $\gets$ \textsc{Substitute}(CurrentFormula, Assignment, ExistsVars) 
+\State CounterEx $\gets$ \textsc{Solve}($\neg$SubstFormula) \Comment{Find a counterexample.}
+
+\If{CounterEx is empty}
+\State \textbf{return} Assignment \Comment{We have a valid solution.}
+\EndIf
+
+\State NewConstraint $\gets$ \textsc{Substitute}(CurrentFormula, CounterEx, ForAllVars)
+\State CurrentFormula $\gets$ CurrentFormula $\land$ NewConstraint
+
+\EndWhile
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsubsection{Preventing Spurious Results}
+
+We may get valid results from the exists-forall implementation that hamper the final generalization results. For example, consider this rewrite over 32-bit vectors:
+    \blockmath{(x \ll 4) \ll 255 = x \ll 259}
+which we can introduce symbolic constants into as:
+    \blockmath{(x \ll C_1) \ll C_2 = x \ll C_3}
+A valid assignment of 8-bit vectors might set \inline{C_1 \mapsto 255}, \inline{C_2 \mapsto 255}, and \inline{C_3 \mapsto 255}, making both sides evaluate to zero for all values of \inline{x} due to overflow. However, this assignment loses information that lets us express \inline{C_3} in terms of \inline{C_1} and \inline{C_2} as \inline{C_3 = C_1 + C_2} in subsequent steps. 
+
+We prevent such assignments by adding new constraints to our SMT formulas based on the operators in the rewrite. Specifically, we apply the following rules in our implementation to avoid losing useful information for synthesis:
+\begin{itemize}
+    \item If a symbolic constant \inline{C} is the LHS operand of a shift operator, we enforce that any assignment for \inline{C} must not equal 0:
+                             \blockmath{(C \neq 0)}
+    Otherwise, a valid solution could set the LHS and RHS to zero, which may be unhelpful for synthesis.
+    \item If a symbolic constant \inline{C} is the RHS operand of a shift operator, we enforce that an assignment for \inline{C} must be between \inline{1} and \inline{W}, where \inline{W} is the processing bitwidth:
+                             \blockmath{(C \neq 0) \land (C < W)}
+    This prevents synthesising constant values that are only valid for a rewrite due to overflow or underflow. 
+    \item If  \inline{C} is an operand of a bitwise AND or OR operator, we enforce that \inline{C} must be neither \inline{0} nor \inline{AllOnes(W)}:
+    \blockmath{(C \neq 0) \land (C \neq AllOnes(W))}
+    where \inline{AllOnes(W)} returns a \inline{W}-bit vector containing \inline{1} in all positions. This prevents synthesising constants that act as either identity or eliminating values for the operators.
+    \item Finally, if \inline{C} is an operand of a bitwise XOR operator, we enforce that \inline{C} must not equal \inline{0}, since \inline{x \oplus 0 = x} for any value of \inline{x}.
+\end{itemize}
+
+\subsection{Constant Expressions Synthesis}
+\label{sec:search}
+The next generalization step attempts to express the symbolic constants on the RHS of the rewrite in terms of the LHS ones. This is a crucial step, as the final result must capture how the symbolic constants on the RHS can be derived from the LHS. 
+Using the example from the previous section, where we introduced symbolic constants to transform the 32-bit rewrite:
+    \blockmath{(x \ll 4) \ll 255 = x \ll 259}
+to a new form:
+    \blockmath{(x \ll C_1) \ll C_2 = x \ll C_3}
+A more general form will express the relationship between the LHS and RHS symbolic constants as \footnote{This generalization has a precondition, and we discuss synthesizing preconditions in the next section.}:
+     \blockmath{(x \ll C_1) \ll C_2 = x \ll (C_1 + C_2)}
+which requires synthesizing a function \inline{f}, such that \inline{C_3 = f(C_1, C_2) = C_1 + C_2}. 
+
+
+The goal of this step is to synthesize new functions that derive each symbolic constant on the RHS in terms of the LHS. We specify this synthesis task using the symbolic constant values in the original or narrow width as input-output examples, where the values on the LHS and RHS represent the inputs and outputs, respectively.  
+
+We explore our search space, comprising functions that apply arithmetic and bitwise operators to their inputs, using deductive and enumerative search. Next, we describe these search methods in detail.   
+
+
+
+\subsubsection{Top-Down Deductive Search}
+
+We implement the top-down algorithm described by Mukherjee and Regehr~\cite{mukherjee_hydra_2024} for Hydra. Given a target output, it synthesizes candidate functions by selecting an input from the specification and an arithmetic operator from the search space as the top part of a function, and attempting to find the rest by inverting the operator.  
+
+To illustrate this, suppose our search space comprises only addition and subtraction operators, and we want to synthesize a function \inline{f} for the above rewrite that satisfies the specification: 
+\blockmath{C_3 = f(10, 14) = 24}
+where we have \inline{C_1 \mapsto 10}, \inline{C_2 \mapsto 14}, and \inline{C_3 \mapsto 24} as our 8-bit input-output examples.
+
+
+We begin by selecting \inline{C_1} and the addition `\inline{+}' operator as the top part of a candidate function, and express the problem of finding \inline{f} when \inline{f(C_1, C_2) = C_3} as:
+   \blockmath{Search(f) = C_1 + Search(f')}
+where \inline{f'(C_1, C_2) = C_3 - C_1}.
+
+That is, we apply the inversion of the selected operator (`\inline{-}') to the original target (\inline{C_3}) and selected input (\inline{C_1}) to get a new target value for the subexpression. 
+
+Substituting the concrete values into the search, we can express \inline{Search(f)} when \inline{f(10, 14) = 24} as:
+      \blockmath{Search(f) = 10 + Search(f')}
+where \inline{f'(10, 14) = 14}.
+
+If the target equals any of the inputs, we return the input as is. In our example, we return from the subexpression as:
+    \blockmath{Search(f') = 14}
+Since \inline{C_2 \mapsto 14}, we can substitute it into our top-level function to get the final result:
+\blockmath{Search(f) = C_1 + C_2}
+We implement this algorithm recursively and describe our implementation in \hyperref[alg:deductive]{Algorithm~2}. It accepts the set of symbolic constants on the LHS of a rewrite as input examples and a RHS constant value as the target. It also accepts a \inline{Depth} argument to limit the size of the recursion tree, and a \inline{Parent}, which is the current top-level constant, to avoid continuously recursing on the same constant. This \inline{Parent} argument prevents run-away chains, such as \inline{C_3 = C_1 - C_1 - C_1 - C_1 - ...}, by blocking the first \inline{(C_1 - C_1)} instance. 
+
+
+\begin{algorithm}
+\caption{Deductive Search Procedure}\label{alg:deductive}
+\begin{algorithmic}[1]
+\Procedure{DeductiveSearch}{Inputs, Target, Depth, Parent}
+\State Results \inline{\gets \emptyset} \Comment{The set of candidate functions.}
+
+\If{Depth = 0}
+\State \textbf{return} Results
+\EndIf
+
+\For{(Symbol, Value)\ $ \in $\ Inputs} 
+    \If{ Value $=$ Target} \Comment{We have an exact match.}
+    \State Results $\gets$ Results $\cup\ \{$ Symbol $\}$
+    \State \textbf{continue}
+    \EndIf
+
+    \If{Symbol $=$ Parent} \Comment{Prevent run-away chains like \inline{C - C}.}
+    \State \textbf{continue}
+    \EndIf
+
+    \For{$\odot \in $ Operators} \Comment{Invertible arithmetic operators. }
+       \State NewTarget = \textsc{Invert}(\inline{\odot}, Target, Value)
+       \For {Expr $\in$ \textsc{DeductiveSearch}(Inputs, NewTarget, Depth-1, Symbol) } 
+        \State Results $\gets$ Results $\cup$ \{Symbol $\odot$ Expr\} \Comment{Append a new candidate}     
+        \EndFor
+    \EndFor
+\EndFor
+
+\State \textbf{return} Results
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+
+
+Our search space for the deductive search algorithm comprises invertible arithmetic operations: addition, subtraction, multiplication, and division. We perform the search for each symbolic constant on the RHS of a rewrite. 
+
+If we get candidate functions for all the constants, we check if the generalization requires a precondition over the symbolic constants. We prefer generalizations with no preconditions, as they will be valid over the entire range of possible literal values. To determine if a generalization requires preconditions, we substitute each combination of candidates into the rewrite and ask the solver for an assignment that invalidates the rewrite. 
+
+For example, in our rewrite containing a single symbolic variable on the RHS, for which we have found a candidate function \inline{C_3 = f(C_1, C_2) = C_1 + C_2}, we ask the solver for an assignment of values such that:
+     \blockmath{(x \ll C_1) \ll C_2 \neq x \ll (C_1 + C_2)}
+If none exists, we terminate the process and return the rewrite:
+ \blockmath{(x \ll C_1) \ll C_2 = x \ll (C_1 + C_2)}
+as a general form of the original rewrite, which is not the case for this example.
+
+After this stage, we know that a more general form of a rewrite \textit{might} require preconditions over its symbolic variables. However, we do not attempt to generate preconditions immediately. Instead, we perform an enumerative search to synthesize new candidate functions and find a combination of results that does not require preconditions. 
+
+
+\subsubsection{Enumerative Search}
+
+
+We perform our enumerative search to find candidate functions for the symbolic constants on the RHS in two stages:
+\begin{itemize}
+    \item First, we create a \textit{sketch} of the LHS of the rewrite, as described by Mukherjee and Regehr~\cite{mukherjee_hydra_2024}, and attempt to find combinations of inputs to the sketch that evaluate to the target value. This lets us capture relationships where a constant on the RHS is derived from the structure of the LHS expression. 
+
+    After this stage, we substitute each combination of results from this stage and the previous deductive search for each RHS symbolic constant into the rewrite, and determine whether any do not need a precondition, as described in the previous section. If so, we return this combination as our generalization result. Otherwise, we continue to the next enumerative search stage.
+
+    
+    \item Here, we enumerate functions comprising arithmetic and bitwise operators in order of increasing cost, which we define by the number of allowed operators, to find candidates that evaluate to the target values.
+    
+\end{itemize}
+
+We describe these stages in detail in this section. 
+% x ≪ C1 & (y ≪ C2 &
+% C3) =⇒ x ≪ C1 & (y ≪
+% C2 & ((−1 ≪ C2) & (−1 ≪
+% C2) & C3))
+\subsubsubsection{Using a Sketch of the LHS}
+Consider this ungeneralized rewrite over 8-bit vectors:
+\blockmath{(x \ll 4) \And ((y \ll 5) \And 88) = (x \ll 4) \And ((y \ll 5) \And 64)}
+By introducing symbolic variables, we transform the rewrite into:
+\blockmath{(x \ll C_1) \And ((y \ll C_2) \And C_3) = (x \ll C_1) \And ((y \ll C_2) \And C_4)}
+Our tool returns the generalized form of this expression as:
+\begin{align*}
+\mathsf{
+(x \ll C_1) \And ((y \ll C_2) \And C_3) = (x \ll C_1)  \And ((y \ll C_2)} \\ 
+\mathsf{\And ((-1 \ll C_2) \And ((-1 \ll C_2) \And C_3)))}
+\end{align*}
+where \inline{C_4 = f(C_1, C_2, C_3) = (-1 \ll C_2) \And ((-1 \ll C_2) \And C_3)}
+
+One keen observation about the expression for \inline{C_4} is that it is structurally similar to the LHS of the rewrite. This relationship between the structure of the LHS and a constant on the RHS occurs frequently in ungeneralized bitvector theorems~\cite{mukherjee_hydra_2024}.  
+
+
+We derive such relationships in this step by extracting the structure of the LHS, called a \textit{sketch}, and attempting to find the right combination of inputs into the sketch that make it evaluate to a target value. 
+
+In our example, we extract the LHS sketch as:
+\blockmath{f(A,B,C,D,E) = (A \ll B) \And ((C \ll D) \And E)}
+The goal is then to find the combination of values to substitute into the sketch for the function \inline{f} to evaluate to the target value. We do this by initialising \inline{f} with combinations of the LHS symbolic variables, \inline{C_1}, \inline{C_2}, and \inline{C_3}, and a set of special constants \inline{\{0, 1, {-1}\}}, where -1 corresponds to \inline{AllOnes(W)}. These special constants augment the search by acting as identity and masking elements for the operators in the sketch. In addition, they are concrete literals that behave consistently in all bitwidths, enabling us to achieve width-independent generalizations.  
+
+In our example, \inline{f} evaluates to the value of \inline{C_4} when we initialise it with the combination:
+\blockmath{f({-1}, C_2, {-1}, C_2, C_3) = ({-1} \ll C_2) \And (({-1} \ll C_2) \And C_3)}
+where we set \inline{A \mapsto {-1}}, \inline{B \mapsto C_2}, \inline{C \mapsto {-1}}, \inline{D \mapsto C_2}, and \inline{E \mapsto C_3}.
+
+
+Mukherjee and Regehr~\cite{mukherjee_hydra_2024} describe a procedure in Hydra where they initialise \inline{f} with all possible combinations of the symbolic variables and the special constants. Instead, we optimize this process and reduce the search space by generating combinations where the symbolic constants can only replace the symbolic constant variables in the sketch, and special constants can only replace input variables. 
+
+To illustrate this using the above example, we enforce that the special constants \inline{\{0, 1, -1\}} can only replace \inline{A} and \inline{C}, which represent the input variables \inline{x} and \inline{y}, in the sketch. Similarly, the symbolic constants, \inline{C_1}, \inline{C_2}, and \inline{C_3}, can only replace \inline{B}, \inline{D} and \inline{E} in the sketch. This improves performance by reducing the number of possible combinations from \inline{6^5 = 7776} to \inline{3^5 = 243}. 
+
+If we get new candidate functions in this step, we substitute them into the rewrite to find a generalized form that does not require a precondition over the symbolic constants. In our example, this involves searching for an assignment of values that satisfies the negation of the rewrite:
+\begin{align*}
+\mathsf{
+(x \ll C_1) \And ((y \ll C_2) \And C_3) \neq (x \ll C_1)  \And ((y \ll C_2)} \\ 
+\mathsf{\And ((-1 \ll C_2) \And ((-1 \ll C_2) \And C_3)))}
+\end{align*}
+
+In this case, the solver will return a proof of unsatisfiability for the negation, indicating that we do not need a precondition for the rewrite. We then terminate the process and return the generalization as:
+\begin{align*}
+\mathsf{
+(x \ll C_1) \And ((y \ll C_2) \And C_3) = (x \ll C_1)  \And ((y \ll C_2)} \\ 
+\mathsf{\And ((-1 \ll C_2) \And ((-1 \ll C_2) \And C_3)))}
+\end{align*}
+However, suppose the solver finds a satisfying assignment for the negation of a rewrite. In that case, we proceed to the final stage of constant expressions synthesis, attempting to find a general form that does not require preconditions over the symbolic constants.
+
+\subsubsubsection{Bottom-up Enumeration}
+\label{enumerative}
+
+In this final stage, we enumerate functions comprising arithmetic and bitwise operators in increasing order of the number of allowed operators. For example, consider the 8-bit rewrite:
+\blockmath{x \ll 1 \oplus y \ll 1 \And 20 = (x \oplus y \And 10) \ll 1}
+which we can introduce symbolic constants into as:
+\blockmath{x \ll C_1 \oplus y \ll C_1 \And C_2 = (x \oplus y \And C_3) \ll C_1}
+and synthesize the generalized form:
+\blockmath{x \ll C_1 \oplus y \ll C_1 \And C_2 = (x \oplus y \And (C_2 \gg C_1)) \ll C_1}
+We use bottom-up enumeration to synthesize the expression for \inline{C_3}, where:
+\blockmath{C_3 = f(C_1, C_2) = C_2 \gg C_1}
+Our enumeration process involves selecting each constant (symbolic and special) and operator combination to find functions that evaluate to the target value(s) on the RHS. 
+
+To illustrate this, when we select \inline{C_2} and allow only one operator, we generate new functions of the form:
+\begin{align*}
+\mathsf{f_1(C_1, C_2)} &= \mathsf{C_2 + C_1} \\
+\mathsf{f_2(C_1, C_2)} &= \mathsf{C_2 + C_2} \\
+\mathsf{f_3(C_1, C_2)} &= \mathsf{C_2 + (-1)} \\
+&... \\
+\mathsf{f_{10}(C_1, C_2)} &= \mathsf{C_2 - C_1} \\
+\mathsf{f_{11}(C_1, C_2)} &= \mathsf{C_2 - C_2} \\
+\mathsf{f_{12}(C_1, C_2)} &= \mathsf{C_2 - (-1)} \\
+&... \\
+\mathsf{f_{20}(C_1, C_2)} &= \mathsf{C_2 \gg C_1} \\
+\mathsf{f_{21}(C_1, C_2)} &= \mathsf{C_2 \gg C_2} \\
+\mathsf{f_{22}(C_1, C_2)} &= \mathsf{C_2 \gg -1} \\
+&...
+\end{align*}
+
+At each enumeration level, which corresponds to the number of allowed operators, we substitute the literal values for the symbolic constants into the enumerated functions and store those that evaluate to a value on the RHS as candidate functions. 
+
+After each level, we combine the candidate functions from this step and previous ones into the rewrite and search for a combination that does not require preconditions over the symbolic constants. If one exists, we return the combination as our generalized result. Otherwise, we proceed to the next enumeration level. 
+
+We limit the enumeration levels by the number of symbolic constants on the LHS of the rewrite.  For example, if we have two LHS symbolic constants, then we allow at most one operator in a function. 
+
+This bottom-up enumeration is a brute-force approach that can perform poorly in a naive implementation. However, we optimize it in two main ways:
+
+\begin{itemize}
+    \item \textbf{Caching Intermediate Computations.} First, we avoid repeated computations between levels by caching the intermediate state. This is based on the observation that functions in a new enumeration level build on results from previous levels. 
+    
+    For example, if we are attempting to synthesize a function \inline{f}, where:
+                    \blockmath{f(C_1, C_2, C_3) = C_1 + C_2  - C3}
+    In level 1, we would synthesize the function:
+        \blockmath{f_1(C_1, C_2, C_3) = C_1 + C_2}
+    When we proceed to level 2 with two allowed operators, several new functions will build on this initial function and take the form:
+        \begin{align*}
+            \mathsf{f_{1}(C_1, C_2, C_3)} &= \mathsf{C_1 + C_2 + C_1} \\
+            \mathsf{f_{2}(C_1, C_2, C_3)} &= \mathsf{C_1 + C_2 + C_2} \\
+            \mathsf{f_{3}(C_1, C_2, C_3)} &= \mathsf{C_1 + C_2 + C_3} \\
+            \mathsf{f_{3}(C_1, C_2, C_3)} &= \mathsf{C_1 + C_2 - C_1} \\
+            \mathsf{f_{3}(C_1, C_2, C_3)} &= \mathsf{C_1 + C_2 - C_3} \\
+            &...
+        \end{align*}
+    Instead of repeatedly computing \inline{C_1 + C_2}, we cache its result and reuse it in the next level. 
+    
+    We initialize the cache with the symbolic and special constants and their values. In addition, we use the cache to avoid building functions from scratch in each level. Instead, we process a new level by applying a single operator to a function in the cache from the previous level. 
+    
+   To reduce the size of the cache, we maintain the invariant that it only contains values that do not equal a target on the RHS, since we would have stored those that equal a target as candidate functions.
+    
+    \item \textbf{Searching For Everything All At Once.} Another optimization we implement is performing each enumerative search stage once, instead of per symbolic constant on the RHS as we do for the deductive search. For the LHS sketch stage, we search for candidate functions for all the RHS constants in a single sweep, while we perform a single sweep per level for bottom-up enumeration. 
+    
+    We achieve this by mapping each symbolic constant value to its symbol, and checking if any of the generated functions evaluate to a value in the map. If so, we add the function to the set of candidate functions for the symbolic variable. 
+
+\end{itemize}
+
+\subsubsection{Pruning Equivalent Expressions}
+\label{sec:prune}
+The deductive and enumerative search methods might return results containing many functionally equivalent expressions for each constant. We prune these expressions by performing SMT queries using the procedure described in \hyperref[alg:prune]{Algorithm 3}. 
+
+The algorithm maintains a set of distinct expressions, and for each new expression, asks the solver whether there is an assignment to the symbolic variables for which the expression does not equal any of the distinct expressions. If none exists, the expression is functionally equivalent to at least one expression in the existing set, and we eliminate it.
+    
+\begin{algorithm}
+\caption{Pruning Functionally Equivalent Expressions}\label{alg:prune}
+\begin{algorithmic}[1]
+\Procedure{Prune}{Expressions}
+\State DistinctExprs $\gets \emptyset$
+
+\For{Expr $\in$ Expressions}
+\If{DistinctExprs is empty}
+\State DistinctExprs.insert(Expr)
+\State \textbf{continue}
+\EndIf
+\State Constraints $\gets \emptyset$ 
+\For{DistinctExpr $\in$ DistinctExprs} \Comment{Compare Expr with the Distinct set}
+\State Constraints = Constraints $\land$ (Expr $\neq$ DistinctExpr)
+\EndFor
+\State Assignment $\gets$ \textsc{Solve}(Constraints) \Comment{Make an SMT query}
+\If{Assignment exists} \Comment{Expr is unique}
+\State DistinctExprs.insert(Expr)
+\EndIf
+\EndFor
+\State \textbf{return} DistinctExprs
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Precondition Synthesis}
+
+Often, representing the RHS of a rewrite in terms of the LHS is sufficient to generalize it. However, some generalizations require a precondition over the symbolic constants. In this section, we describe our approach to synthesizing the required preconditions for a generalization. 
+
+Our precondition synthesis method accepts a rewrite after substituting in a combination of candidate functions for each RHS symbolic constant from the constant expressions synthesis step.
+
+To illustrate the synthesis process, assume we are given an 8-bit rewrite:
+\blockmath{(x \And 7\ ||\ y \And 8) \And 7 = x \And 7}
+which we can generalize as:
+\blockmath{C_1 \And C_2 = 0 \models (x \And C_1\ ||\ y \And C_2) \And C_1 = x \And C_1}
+where \inline{C_1 \And C_2 = 0} represents the precondition.
+
+At a high level, we perform the following steps:
+\begin{itemize}
+    \item \textbf{Finding Negative Examples}. First, we perform SMT queries to find assignments of values to the symbolic constants that satisfy the negation of the rewrite. We find three distinct assignments, based on the observation by Mukherjee and Regehr \cite{mukherjee_hydra_2024} on the effectiveness of three choices.
+
+    In our implementation, the solver returns assignments that satisfy the formula:
+        \blockmath{(x \And C_1\ ||\ y \And C_2) \And C_1 \neq x \And C_1}
+    as: \inline{\{C_1 \mapsto {-1}, C_2 \mapsto {-1} \}}, \inline{\{C_1 \mapsto 127, C_2 \mapsto -1 \}}, and \inline{\{C_1 \mapsto {-4}, C_2 \mapsto {-3} \}}. 
+    
+    We refer to these assignments as \textit{negative examples}, and the assignment in the valid rewrite in the original or reduced width, \inline{\{C_1 \mapsto 7, C_2 \mapsto 8 \}} in our input, as a \textit{positive example}. These positive and negative examples help to initially filter for candidate preconditions, as a valid precondition must be true for the positive example and false for all negative ones \cite{mukherjee_hydra_2024}.  
+
+    \item \textbf{Candidate Generation}. Next, we enumerate expressions using a bottom-up approach and filter out invalid candidates using the positive and negative examples. 
+    
+    \item \textbf{Candidate Verification}. While positive and negative examples help filter out invalid candidates, they do not guarantee that we are left with \textit{only} valid candidates. In this step, we perform SMT queries to filter out any remaining invalid candidates. 
+    \item \textbf{Combining Preconditions}: Finally, we prune the remaining candidates and return a disjunction of the results as a precondition for the rewrite.  
+\end{itemize}
+
+We describe the latter three steps in detail in this section. 
+
+\subsubsection{Generating Candidates}
+We generate candidate functions using the bottom-up enumeration approach described in \hyperref[enumerative]{Section 3.3.2}, where we combine the symbolic and special constants with an increasing number of allowed operators per level to explore the search space. The search space for this task also comprises arithmetic and bitwise operators. 
+
+For each function \inline{f_i} generated in a level, we create five new expressions comparing it with zero on the RHS, such that:
+\begin{align*} 
+\mathsf{f_i = 0} \\
+\mathsf{f_i < 0} \\
+\mathsf{f_i  \leq 0} \\
+\mathsf{f_i > 0} \\
+\mathsf{f_i \geq 0}
+\end{align*}
+This approach differs from Hydra's \cite{mukherjee_hydra_2024}, where they attempt to derive a relationship per constant by placing each symbolic constant on the RHS instead of zero.
+
+To illustrate this process using our example rewrite, say we have a candidate \inline{f} such that \inline{f(C_1, C_2) = C_1 \And C_2}. We can evaluate the positive example as:
+\blockmath{f(7, 8) = 0}
+and the negative examples from earlier as:
+\begin{align*} 
+\mathsf{f(-1,-1) = -1} \\
+\mathsf{f(127,-1) = 127} \\
+\mathsf{f(-4,-3) = -4} \\
+\end{align*}
+Since a valid precondition must be true for the positive example and false for all the negative ones, we can filter out \inline{f > 0}, \inline{f \geq 0}, \inline{f < 0}, and \inline{f \leq 0} as potential preconditions, since they are false for the positive example or true for at least one negative example. This leaves us with \inline{f = 0} as a candidate precondition. 
+
+At each enumeration level, we filter out all the poor candidate expressions for each function using the positive and negative examples. We then send the remaining ones to the next stage for further verification. If we cannot verify any candidates as valid preconditions, we increase the number of allowed operators and repeat the candidate generation process. 
+
+
+An additional detail for this step is that we include the processing bitwidth as a variable for enumeration, together with the symbolic and special constants. This lets us generate preconditions that depend on the width of the rewrite. 
+
+For example, consider this rewrite involving 32-bit vectors:
+\blockmath{x: i32 \ll 6 \ll 28 = 0}
+A more general form of this expression includes a precondition that constrains the values of the shift operands based on the bitwidth \inline{W}:
+\blockmath{C_1 + C_2 > W \models x \ll C_1 \ll C_2 = 0}
+By incorporating the width, we can synthesize the precondition:
+\blockmath{C_1 + C_2 - W > 0}
+
+In addition to the bottom-up enumeration, we check whether any symbolic constants are powers of two, and include any matching ones as potential preconditions. 
+
+\subsubsection{Verifying Candidates}
+Often, we are still left with invalid precondition candidates after using positive and negative examples for filtering. For example, since we incorporate the bitwidth \inline{W} as an input to our generated functions, a candidate that passes the filter check using the positive and negative examples above is the expression:
+\blockmath{(C_2\ ||\  W) \geq 0} 
+when we set \inline{W = 8}. 
+
+However, it is not a valid precondition since the rewrite is not valid when we set \inline{C_1 \mapsto {-1}} and \inline{C_2 \mapsto 127}, but the precondition is met. For a precondition \inline{PC} to be valid for a rewrite \inline{R}, the formula:
+        \blockmath{PC \land \neg R} 
+must be unsatisfiable. 
+
+Mukherjee and Regehr \cite{mukherjee_hydra_2024} describe a process in Hydra where they make a solver query per candidate to verify it. However, as there might be many potential candidates, we implement two optimizations to reduce the number of solver calls and improve synthesis performance:
+\begin{enumerate}
+    \item First, we prune observationally equivalent candidates, which are functions that evaluate to the same values for all positive and negative examples. 
+    \item In some cases, there might still be hundreds of candidates left after pruning observationally equivalent candidates. To avoid invoking the solver per candidate, we implement a ``progressive filtering" method, which we have found to reduce the number of solver invocations by up to 30$\times$. We describe this method next. 
+\end{enumerate}
+
+\subsubsubsection{Progressive Filtering}
+Instead of performing an SMT query per candidate to filter out invalid ones, we significantly reduce the number of required calls using the iterative process described in \hyperref[alg:progressive]{Algorithm 4}. It works as follows:
+\begin{itemize}
+    \item First, we create a disjunction of all the candidates and ask the solver for an assignment of symbolic constants that meets \textit{any} of the candidate preconditions but violates the rewrite. 
+    
+    For example, given candidates \inline{P_1}, \inline{P_2}, \inline{P_3}, and a rewrite \inline{R}, we ask for an assignment that satisfies:
+    \blockmath{(P_1 \lor P_2 \lor P_3) \land \neg R}
+    This assignment represents a new negative example. If none exist, all the candidates are valid preconditions, and we return them.  
+    \item Otherwise, we substitute the new negative example values into each candidate function and evaluate them. Since a valid precondition must be false for all negative examples, we remove any candidate that evaluates to true. This step helps filter candidates more efficiently than invoking the solver, as evaluating these expressions is significantly cheaper than invoking a solver per candidate. 
+    \item We repeat the process from the first step with any remaining candidates after the filtering, or return an empty set if there are none left.  
+\end{itemize}
+
+
+\begin{algorithm}[tbh]
+\caption{Progressive Filtering Algorithm}\label{alg:progressive}
+\begin{algorithmic}[1]
+\Procedure{ProgessiveFilter}{Rewrite, Candidates} 
+\State CurrentSet $\gets \emptyset$
+
+\While{CurrentSet is not empty}
+\State Constraints $\gets \emptyset$ 
+\For{Candidate $\in$ CurrentSet}
+\State Constraints  $\gets $ Constraints $\lor$ Candidate
+\EndFor
+\State Assignment $\gets$ \textsc{Solve}(Constraints $ \land \neg$Rewrite)
+\If{Assignment is empty}
+\State \textbf{break}
+\EndIf
+\State NewCandidates $\gets \emptyset$
+\For{Candidate $\in$ CurrentSet}  \Comment{Retain candidates for the next round}
+\State ConcreteCandidate $\gets$ \textsc{Substitute}(Candidate, Assignment)
+\If{\textsc{Eval}(ConcreteCandidate) == False}
+\State NewCandidates.insert(Candidate) 
+\EndIf
+\EndFor
+\State CurrentSet $\gets $ NewCandidates
+\EndWhile
+\State \textbf{return} CurrentSet
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+We have observed that while progressive filtering leads to slower solver queries in the first step on average, it can improve the overall execution time by up to 50$\%$.  
+
+
+\subsubsection{Finding the Weakest Precondition}
+After the previous step, we are left with only valid preconditions. However, we aim to return the \textit{weakest} precondition, which evaluates to true for the largest number of positive examples. 
+
+In Hydra, Mukherjee and Regehr\ \cite{mukherjee_hydra_2024} return a compact form of the weakest precondition by beginning with a brute-force model counting process to determine how many distinct assignments each candidate has. They then sort the candidates according to their model count from highest to lowest, where a higher value indicates a weaker precondition, and create a disjunction of non-overlapping candidates. This guarantees that they return the most compact form of the weakest precondition, since preconditions with a higher model count will subsume equivalent ones. We describe this process in more detail in \hyperref[appendix:b]{Appendix~B}.
+
+While our initial implementation followed the approach in Hydra, we found model counting to be a major performance bottleneck. Instead, we remove overlapping candidates using \hyperref[alg:prune]{Algorithm 3}, described in \hyperref[sec:prune]{Section 3.3.3} for pruning equivalent expressions, and return a disjunction of the remaining candidates as the weakest precondition. 
+
+This method does not guarantee the most compact form of the precondition. However, we believe sacrificing guaranteed compactness for performance is an acceptable tradeoff. In addition, we did not observe any differences in the results between our earlier implementation with model counting and this one, where we only prune overlapping candidates and avoid model counting to return the weakest precondition.
+
+In summary, we generalize a bitvector rewrite by introducing symbolic constants, narrowing its width for better performance, expressing the symbolic constants on the RHS in terms of the LHS using deductive and enumerative searches, and attempting to synthesize any required preconditions. We also implement new techniques to address bottlenecks in Hydra's algorithm. In the next chapter, we evaluate our tool and compare its performance with Hydra's. 
+
+
+
+\section{Related work}
+Our work builds on several prior works that have contributed to the rich and growing area of program synthesis and verification. In this chapter, we survey the landscape of existing work, going from the most relevant to our work to the least.  
+
+\subsection{Generalizing Peephole Rewrites}
+Hydra \cite{mukherjee_hydra_2024} is the direct inspiration for our work and the most closely related tool to this project. It accepts LLVM peephole rewrites expressed in Souper's IR \cite{sasnauskas_souper_2018} as its input, and produces a partial or full generalization of the rewrite. In addition, Hydra can generate preconditions over the input variables in a rewrite, in addition to the constants. However, as described in \hyperref[implementation]{Chapter 3}, we optimize Hydra in several ways, including introducing a progressive filtering algorithm to reduce the number of solver invocations and generating the weakest precondition without model counting, leading to better performance than Hydra on our test cases. In addition, our work is compiler-agnostic, as it can generalize peephole rewrites involving arithmetic operations on integers written in any compiler framework.
+
+
+Besides Hydra, Optgen \cite{franke_optgen_2015} implements a generalizer module for the LLVM, GCC, and ICC compiler frameworks. It integrates generalization with superoptimization and follows a similar approach to ours and Hydra's of introducing symbolic constants and enumerating expressions to perform constant expressions and precondition synthesis. However, by coupling generalization and integration, it does not appear to allow generalizing a specific rewrite. In addition, it only supports inputs at 8 and 32 bits, while we do not place restrictions on the input bitwidth. 
+
+Similarly, Alive-Infer \cite{menendez_alive-infer_2017} can partially generalize peephole rewrites generated by Souper \cite{sasnauskas_souper_2018}. Given a rewrite, it synthesizes preconditions over the symbolic variables on the LHS of the optimization while leaving the concrete constants on the RHS intact. In contrast, we introduce symbolic constants on both sides and attempt to fully generalize a given rewrite. 
+
+Finally, Proofgen \cite{tate_generating_2010} takes a different approach from ours and other works by using a proof of equivalence between an original and optimized program to synthesize a general optimization rule. However, it does not seem to support the type of generalizations we can perform over arithmetic operators, but it appears better suited for programs containing more complex control flow structures. 
+
+Unlike these prior tools, we extend generalization beyond peephole rewrites in compilers to bitvector theorems in general, useful for verifying software and hardware systems \cite{hutchison_tale_2014}. Importantly, we perform synthesis on top of verified SMT queries in an interactive theorem prover to ensure the soundness of our results. 
+
+\subsection{Synthesizing Peephole Rewrites}
+Our tool accepts rewrites that have either been manually generated or automatically derived by a superoptimizer. Superoptimizers attempt to derive compiler optimizations by searching for a functionally equivalent but cheaper set of instructions according to a cost model. Early superoptimizers \cite{massalin_superoptimizer_1987} used enumeration and testing to discover optimizations and relied on a human to ensure correctness. However, modern superoptimizers implement several techniques to prune the search space of possible programs and rely on SMT solvers like Z3~\cite{de_moura_z3_2008} and cvc5~\cite{barbosa_cvc5_2022} to ensure equivalence between the original program and the optimization. 
+
+Souper \cite{sasnauskas_souper_2018} synthesizes rewrites for LLVM IR using a CEGIS-based algorithm. Given a collection of instructions, representing the possible components in the synthesized program, it encodes them as line numbers and forms a query that expresses the logical relationship between the components' inputs and outputs. It then uses a CEGIS procedure similar to our description in \hyperref[cegis]{Section 3.2.1} to determine a way to connect the instructions while ensuring that the RHS is equivalent to the LHS for all possible inputs. To synthesize the minimum-cost program, it wraps CEGIS in a loop and attempts to synthesize the RHS in increasing order of instruction cost. 
+
+
+STOKE \cite{schkufza_stochastic_2013} is an earlier superoptimizer that frames the superoptimization task as a stochastic search problem to find cheaper programs. It uses a Markov Chain Monte Carlo sampling method to explore the space of programs according to a cost function that measures the potential performance improvement and correctness of transformations, and validates rewrites using SMT queries. Phothilimthana et al \cite{phothilimthana_scaling_2016} improve on STOKE by introducing LENS, a bi-directional search algorithm. LENS reduces the enumerative search candidate space by pruning candidates from both forward and backward directions.  
+
+Several other works perform superoptimization in other domains. For tensor computations in deep learning applications, TASO \cite{jia_taso_2019} enumerates potential substitutions for models' computation graphs and verifies equivalence between the original and the optimized version using an SMT solver. PET \cite{wang_pet_2021} initially finds programs that are only partially equivalent to the original, to enable a larger search space of optimizations, before correcting them to ensure full equivalence. Finally, unlike TASO and PET, which only discover algebraic transformations on computation graphs, Mirage \cite{wu_mirage_2025} is a multilevel superoptimizer that can synthesize algebraic, scheduling, and kernel transformations on a given computation graph. 
+
+
+\subsection{Finding Weakest Preconditions}
+In our work, we adapt the algorithm described by Mukherjee and Regehr~\cite{mukherjee_hydra_2024} for precondition synthesis in Hydra, where they use positive and negative examples to filter candidates and perform solver queries for further verification. In addition, they implement a brute-force model counting algorithm to generate the weakest and most compact precondition. We optimize their approach by implementing a progressive filtering algorithm to reduce the number of solver calls and generating the weakest precondition without model counting, at the cost of guaranteed compactness. 
+
+In contrast, Alive-Infer \cite{menendez_alive-infer_2017} synthesizes preconditions by generating several positive and negative examples and using a greedy set cover algorithm to learns the predicates that separate the positive and negative examples. Its approach is similar to PIE \cite{padhi_data-driven_2016}, which uses a machine learning algorithm to separate positive and negative examples and infer preconditions for general-purpose programs.  
+
+Optgen \cite{franke_optgen_2015} and PsyCO \cite{lopes_weakest_2014} also generate preconditions for compiler optimizations. Optgen generates preconditions by enumerating candidate expressions, with the restriction that they must evaluate to zero. Finally, PsyCO generates read-write preconditions and does not handle preconditions over bitvector arithmetic optimizations.   
+
+\subsection{Model Counting}
+% resource: https://proceedings.kr.org/2024/71/kr2024-0071-shaw-et-al.pdf
+We provide a reusable method for exact model counting as part of our work, despite not incorporating it in the final generalization workflow. Model counting algorithms may be \textit{exact} or \textit{approximate}, and several prior works have focused on developing efficient implementations. Exact model counters use DPLL-based search techniques on formulas in deterministic decomposable negation normal form (d-DNNF) \cite{darwiche_new_2004}. Examples are Cachet \cite{sang_combining_2004} and SharpSAT \cite{thurley_sharpsat_2006}, which adopt \textit{component caching} to reuse model counts of sub-formulas during the DPLL search and avoid redundant computations. 
+
+Approximate model counters provide reliable estimates of the model count while being cheaper to run than exact ones. ApproxMC~\cite{chakraborty_scalable_2013}, the state-of-the-art approximate model counter, uses a hashing-based scheme to partition the solution space into smaller cells and enumerate the models in a randomly selected cell. It then estimates the overall model count by scaling the number of solutions in the random cell by the total number of cells. A more recent approach by Dalla et al.~\cite{dalla_machine_2024} represents model counting as a regression problem and trains a machine learning model to estimate the model count of a formula.
+
+An avenue for future work is implementing more sophisticated model-counting algorithms to efficiently return the most compact form of a precondition. 
+
+\subsection{SMT Solvers and Interactive Proof Assistants}
+We perform program synthesis on top of verified SMT results in an interactive proof assistant. Our implementation adapts methods from the \texttt{bv\_decide} tactic~\cite{noauthor_bvdecide_nodate} to solve SMT formulas involving bitvectors in Lean by using a verified bitblaster, invoking an external SAT solver, and reconstructing the SAT solver proof.
+
+However, alternative approaches exist that integrate interactive proof assistants with SMT solvers. In Isabelle/HOL \cite{nipkow_isabellehol_2002}, Blanchette et al.~\cite{blanchette_extending_2011} extend the Sledgehammer tactic to integrate it with proof-producing SMT solvers. SMTCoq \cite{ekici_smtcoq_2017} within the Rocq proof assistant (previously known as Coq) \cite{bertot_interactive_2013} uses an external SMT solver to prove bitvector theorems. More recent work by Mohamed et al.~\cite{mohamed_lean-smt_2025} introduces the \texttt{LEAN-SMT} tactic, which integrates Lean with the cvc5 solver \cite{barbosa_cvc5_2022} and can reconstruct its proofs. However, it does not yet support proving bitvector theorems. 
+
+% https://members.loria.fr/PFontaine/Fontaine8.pdf
+
+% Lean-SMT: https://arxiv.org/pdf/2505.15796
+
+% Sledgehammer too.
+
+
 
 \section{Conclusion}
 

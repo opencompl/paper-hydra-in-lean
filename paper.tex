@@ -629,7 +629,7 @@ We describe these stages in detail in this section.
 % C3) =⇒ x ≪ C1 & (y ≪
 % C2 & ((−1 ≪ C2) & (−1 ≪
 % C2) & C3))
-\subsubsubsection{Using a Sketch of the LHS}
+\paragraph{Using a Sketch of the LHS}
 Consider this ungeneralized rewrite over 8-bit vectors:
 \blockmath{(x \ll 4) \And ((y \ll 5) \And 88) = (x \ll 4) \And ((y \ll 5) \And 64)}
 By introducing symbolic variables, we transform the rewrite into:
@@ -675,7 +675,7 @@ In this case, the solver will return a proof of unsatisfiability for the negatio
 \end{align*}
 However, suppose the solver finds a satisfying assignment for the negation of a rewrite. In that case, we proceed to the final stage of constant expressions synthesis, attempting to find a general form that does not require preconditions over the symbolic constants.
 
-\subsubsubsection{Bottom-up Enumeration}
+\paragraph{Bottom-up Enumeration}
 \label{enumerative}
 
 In this final stage, we enumerate functions comprising arithmetic and bitwise operators in increasing order of the number of allowed operators. For example, consider the 8-bit rewrite:
@@ -853,7 +853,7 @@ Mukherjee and Regehr \cite{mukherjee_hydra_2024} describe a process in Hydra whe
     \item In some cases, there might still be hundreds of candidates left after pruning observationally equivalent candidates. To avoid invoking the solver per candidate, we implement a ``progressive filtering" method, which we have found to reduce the number of solver invocations by up to 30$\times$. We describe this method next. 
 \end{enumerate}
 
-\subsubsubsection{Progressive Filtering}
+\paragraph{Progressive Filtering}
 Instead of performing an SMT query per candidate to filter out invalid ones, we significantly reduce the number of required calls using the iterative process described in \hyperref[alg:progressive]{Algorithm 4}. It works as follows:
 \begin{itemize}
     \item First, we create a disjunction of all the candidates and ask the solver for an assignment of symbolic constants that meets \textit{any} of the candidate preconditions but violates the rewrite. 

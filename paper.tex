@@ -173,7 +173,7 @@
 \begin{document}
 
 %% Title information
-\title{Automated \& Interactive End To End Proofs of Bitvector Generalization for Verifed Compilation}
+\title{Generalized, User-Guided Rewrite Synthesis of Parametric Bitvector Expressible IRs for Verifed Compilation}
 %% [Short Title] is optional;
 % \title[Short Title]{Full Title}       %% [Short Title] is optional;
                                       %% when present, will be used in
@@ -245,15 +245,18 @@ Peephole rewriting is a key workhorse in optimizing compilers to simplify and ca
 Recently, approaches to peephole rewriting have centered on automatically generating thousands of peephole rewrites,
 with synthesis, e-graphs, and related approaches.
 %
-We tackle the problem of \emph{proving} these generated rewrites correct.
+We tackle the problem of providing a \emph{generic library} for building such peephole rewrite generalizers,
+along with \emph{proofs of correctness} of these generated rewrites correct.
+Furthermore, these synthesis algorithms have many decision points,
+and our use of an interactive theorem prover allows us to expose these decision points to end-users.
 %
-Toward this, we reimplement the recent Hydra synthesis algorithm in the Lean
-proof assistant. We expose this framework as reusable tactics, which can be
-used for generalizing theorems about arbitrary types that are expressible as
-bitvectors.
+Toward this, we reimplement the recent Hydra synthesis algorithm in the Lean proof assistant.
+We generalize the design of Hydra into a library, allowing instantiation for different IRs.
+We instantiate our library on bitvectors, bitvectors plus poison semantics, and floating point,
+and demonstrate that our library can synthesize parameter-independent peephole rewrites for these IRs.
 %
-Our work provides foundational tools for building large-scale, end-to-end
-verified, peephole rewriter systems.
+Our work provides foundational tools for building large-scale, verified, peephole rewriter systems for compiler IRs
+with bitvector-expressible semantics.
 \end{abstract}
 
 % Only add ACM notes and keywords in camera ready version

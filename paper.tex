@@ -299,49 +299,77 @@ with bitvector-expressible semantics.
 \maketitle
 
 \section{Introduction}
-Consider a program containing the pattern: \inline{x * 8}, where \inline{x} is an input variable. When building an optimizing compiler, the developer might notice that this program can be made more efficient by replacing the multiplication with a left shift operation as:  
-\[\mathsf{x * 8  \implies x \ll 3}\] 
-This type of rewrite, where compilers transform small code sections or patterns into logically equivalent but more efficient forms, is known as a \textit{peephole optimization}~\cite{mckeemanPeephole1965}. Peephole optimizations are prominent in many modern compiler frameworks, including LLVM \cite{lattner_llvm_2004}, which has over a thousand of them \cite{menendez_termination-checking_2016}.  
+
+Consider a program containing the pattern: \inline{x * 8}, where \inline{x} is an input variable. When building an optimizing compiler, the developer might notice that this program can be made more efficient by replacing the multiplication with a left shift operation as:
+\[\mathsf{x * 8  \implies x \ll 3}\]
+This type of rewrite, where compilers transform small code sections or patterns into logically equivalent but more efficient forms, is known as a \textit{peephole optimization}~\cite{mckeemanPeephole1965}. Peephole optimizations are prominent in many modern compiler frameworks, including LLVM \cite{lattner_llvm_2004}, which has over a thousand of them \cite{menendez_termination-checking_2016}.
 
 Going further, the developer might notice that this rewrite does not apply only when we multiply the variable \inline{x} by \inline{8}, but when we multiply \inline{x} by any constant \inline{C} which is a power of two. The full rewrite pattern then becomes:
-% sid: Use \mathsf{IsPowerOf2} for better
-% formatting.
+% sid: Use \mathsf{IsPowerOf2} for better formatting.
     \blockmath{IsPowerOf2(C) \models x * C \implies x \ll \log_2 C}
-where $\mathsf{IsPowerOf2(C)}$ is called the \textit{precondition} for the rewrite. 
+where $\mathsf{IsPowerOf2(C)}$ is called the \textit{precondition} for the rewrite.
 
-The developer has now transformed the initial rewrite from its original form, containing the concrete constants \inline{8} and \inline{3}, to a \textit{generalized} form containing a symbolic constant \inline{C} representing integers of an arbitrary width. This generalized rewrite can match more patterns across input programs and lead to more efficient code. 
+The developer has now transformed the initial rewrite from its original form,
+containing the concrete constants \inline{8} and \inline{3}, to a \textit{parametrized} form containing a symbolic constant \inline{C} representing integers of an arbitrary width.
+This generalized rewrite can match more patterns across input programs and lead to more efficient code.
 
-In many compiler development workflows, deriving a rewrite from an input program and making it more general is manual, error-prone, and a major source of bugs \cite{yang_finding_2011}. This has led to the creation of tools like Souper \cite{sasnauskas_souper_2018}, for automatically finding optimizations, and Alive2 \cite{lopes_provably_2015, lopes_alive2_2021}, which can verify a peephole optimization or return a counterexample. More recently, Mukherjee and Regehr \cite{mukherjee_hydra_2024} introduced Hydra for automatically generalizing optimizations. 
+In many compiler development workflows, deriving a rewrite from an input program and making it more general is manual,
+error-prone, and a major source of bugs \cite{yang_finding_2011}.
+This has led to the creation of tools like Souper \cite{sasnauskas_souper_2018},
+for automatically finding optimizations,
+and Alive2 \cite{lopes_provably_2015, lopes_alive2_2021},
+which can verify a peephole optimization or return a counterexample.
+More recently, Mukherjee and Regehr \cite{mukherjee_hydra_2024} introduced Hydra for automatically generalizing optimizations.
 
-These existing tools operate on LLVM intermediate representation (IR) and rely on satisfiability modulo theories (SMT) solvers for correctness. However, SMT solvers are large and complex systems that implement several heuristics for scale and performance. As a result, they may contain bugs that lead to incorrect results \cite{barbosa_challenges_2023}. For example, while building Alive2, Lopes et al. \cite{lopes_alive2_2021} encountered bugs in the Z3 SMT solver \cite{de_moura_z3_2008}. A more recent fuzzing campaign \cite{winterer_validating_2024} also found 53 correctness bugs in Z3 and the cvc5 SMT solver~\cite{barbosa_cvc5_2022}. 
+From a more abstract point of view, we see that these are in fact working on \emph{parametric families} of compiler IRs,
+parametrized by a natural number.
+In the case of bitvector solvers, the parameter is the bitwidth.
+In the case of LLVM, the integer types too are parametrized by bitwidth.
+In the case of floating point, the type is parametrized by both mantissa and exponent.
+We extract the core algorithmic insights from existing algorithms,
+and provide an algorithm that subsumes all the above cases: It allows for generalization of an arbitrary compiler IR
+that is parametrized by a natural number.
 
-To increase confidence in their output, these solvers produce correctness proofs that can be reconstructed by proof assistants for verification. However, these proofs are brittle, and various works have encountered bugs while reconstructing proofs produced by SMT solvers \cite{blanchette_extending_2011} \cite{bohme_fast_2010} \cite{bohme_reconstruction_2011}. In essence, these automation tools, Souper, Alive, and Hydra, which rely on SMT solvers' results for correctness, are limited by their solvers' capability.
+Of course, there is no free lunch, and a large part of the effectiveness of the algorithm
+rely on heuristics that are specialized to the structure of the IR that is being generalized.
+Our algorithmic description clearly decomposes the abstract algorithm from the heuristics,
+and provides points of extensibility to implement different heuristics for different IRs.
 
+% and rely on satisfiability modulo theories (SMT) solvers for correctness.
+% However, SMT solvers are large and complex systems that implement several heuristics for scale and performance.
+% As a result, they may contain bugs that lead to incorrect results \cite{barbosa_challenges_2023}.
+% For example, while building Alive2, Lopes et al. \cite{lopes_alive2_2021} encountered bugs in the Z3 SMT solver \cite{de_moura_z3_2008}.
+% A more recent fuzzing campaign \cite{winterer_validating_2024} also found 53 correctness bugs in Z3 and the cvc5 SMT solver~\cite{barbosa_cvc5_2022}.
 
-This limitation highlights an opportunity for automation tools that can guide compiler developers and produce \textit{provably correct} results. We believe such tools will play an increasingly important role as domain-specific accelerators continue to emerge and rely on compilers to produce fast and correct code to effectively exploit new instruction sets. 
+% To increase confidence in their output, these solvers produce correctness proofs that can be reconstructed by proof assistants for verification. However, these proofs are brittle, and various works have encountered bugs while reconstructing proofs produced by SMT solvers \cite{blanchette_extending_2011} \cite{bohme_fast_2010} \cite{bohme_reconstruction_2011}. In essence, these automation tools, Souper, Alive, and Hydra, which rely on SMT solvers' results for correctness, are limited by their solvers' capability.
 
-In this work, we develop a tool for generalizing peephole rewrites in Lean \cite{moura_lean_2021}, a functional programming language and interactive theorem prover. We rely on existing infrastructure \cite{bhat_verifying_2024} to convert peephole rewrites involving arithmetic operations over integers in LLVM into fixed-width theorems involving bitvector equalities, and attempt to find a width-independent version of the theorem containing symbolic constants. Crucially, we ensure the reliability of our results by performing SMT queries on top of a verified SAT proof checker in Lean.
+% This limitation highlights an opportunity for automation tools that can guide compiler developers and produce \textit{provably correct} results. We believe such tools will play an increasingly important role as domain-specific accelerators continue to emerge and rely on compilers to produce fast and correct code to effectively exploit new instruction sets.
 
-By operating on bitvector theorems, we extend the potential applications of our work beyond peephole optimizations in compilers to other areas that involve proving theorems over bitvectors, such as hardware and software verification \cite{hadarean_fine_2015}, as a generalized theorem can be used to construct larger, more complex proofs. However, as we primarily target compiler developers writing peephole optimizations, we refer to these theorems as \textit{bitvector rewrites} in this work.
+We develop this library for generalizing rewrites in Lean \cite{moura_lean_2021},
+a functional programming language and interactive theorem prover.
+We rely on existing infrastructure \cite{bhat_verifying_2024} to convert peephole rewrites involving arithmetic operations over integers in LLVM into fixed-width theorems involving bitvector equalities,
+and attempt to find a width-independent version of the theorem containing symbolic constants.
+We ensure the reliability of our results by performing SMT queries on top of a verified SAT proof checker in Lean.
 
-In addition, as part of providing this generalization feature, we implement several reusable SMT-based algorithms for reasoning over bitvectors on top of a verified SAT checker. These include:  
+% By operating on bitvector theorems, we extend the potential applications of our work beyond peephole optimizations in compilers to other areas that involve proving theorems over bitvectors, such as hardware and software verification \cite{hadarean_fine_2015},
+% as a generalized theorem can be used to construct larger, more complex proofs. However, as we primarily target compiler developers writing peephole optimizations, we refer to these theorems as \textit{bitvector rewrites} in this work.
 %Sid:  Also, the exists-forall algorithm works *in general*
 % for BV exists forall problems. Emphasize this, and say that
 % we then use it for constant synthesis.
 % Define what exists-forall is :)
-\begin{itemize}
-    \item An algorithm for solving \textbf{exists-forall} problems \cite{dutertre_solving_2015}, which determines the satisfiability of formulas of the form \inline{\exists x\ \forall y\ \Phi(x, y)}, by finding values of \inline{x} that ensure the formula holds for all possible values of \inline{y}. 
-    
-    We use this algorithm to synthesize new constant values in a lower bitwidth than the original rewrite and improve the performance of our SMT queries. However, exists-forall algorithms have applications in several other areas, including hardware reverse engineering \cite{gascon_template-based_2014} and designing cyber-physical systems~\cite{cheng_efsmt_2013}. 
-  
-
-    \item Top-down \textbf{deductive search} and bottom-up \textbf{enumerative search} methods for synthesizing programs that perform arithmetic and bitwise operations on bitvectors, given a set of input-output examples. 
-    
-    \item  An algorithm for \textbf{synthesizing preconditions} over the symbolic constants in a bitvector rewrite under which the rewrite is always valid. 
-    % Same for model counting: works in general, used
-    % for ... Define what model counting is?
-    \item A method for determining how many unique assignments of variables satisfy a bitvector formula, also known as \textbf{model counting}. Our initial generalization procedure used this method to generate weak and compact preconditions over symbolic constants, but we have optimized the process by removing this step. However, we retain our model counting implementation for reuse in other relevant applications, including cryptography \cite{beck_automating_2020} and probabilistic inference \cite{sang_performing_2005}. 
-\end{itemize}
+% \begin{itemize}
+%     \item An algorithm for solving \textbf{exists-forall} problems \cite{dutertre_solving_2015}, which determines the satisfiability of formulas of the form \inline{\exists x\ \forall y\ \Phi(x, y)}, by finding values of \inline{x} that ensure the formula holds for all possible values of \inline{y}. 
+%     
+%     We use this algorithm to synthesize new constant values in a lower bitwidth than the original rewrite and improve the performance of our SMT queries. However, exists-forall algorithms have applications in several other areas, including hardware reverse engineering \cite{gascon_template-based_2014} and designing cyber-physical systems~\cite{cheng_efsmt_2013}. 
+%   
+% 
+%     \item Top-down \textbf{deductive search} and bottom-up \textbf{enumerative search} methods for synthesizing programs that perform arithmetic and bitwise operations on bitvectors, given a set of input-output examples. 
+%     
+%     \item  An algorithm for \textbf{synthesizing preconditions} over the symbolic constants in a bitvector rewrite under which the rewrite is always valid. 
+%     % Same for model counting: works in general, used
+%     % for ... Define what model counting is?
+%     \item A method for determining how many unique assignments of variables satisfy a bitvector formula, also known as \textbf{model counting}. Our initial generalization procedure used this method to generate weak and compact preconditions over symbolic constants, but we have optimized the process by removing this step. However, we retain our model counting implementation for reuse in other relevant applications, including cryptography \cite{beck_automating_2020} and probabilistic inference \cite{sang_performing_2005}.
+% \end{itemize}
 
 Overall, our contributions are:
 \begin{itemize}
@@ -349,17 +377,16 @@ Overall, our contributions are:
     and decoding functions from parametrically finite structures to bitvectors,
     as well as a compositional translation of expressions to bitvector
     expressions.
-	\item Exploiting these extensions to create \bvgeneralize,
-    a tactic to automatically generalize theorems over parametrically finite structures.
-	\item Improvements over the Hydra synthesis algorithm,
-    which we use to perform the generalization.
+	\item A generalization of the Hydra algorithm to synthesize generalized rewrites over parametrized compiler IRs.
+	\item A library, based on the Lean extensions and the generalized Hydra algorithm which powers
+    proof-producing, automatic generalization of theorems over parametric compiler IRs.
   \item A user interface that allows for exposing nondeterministic choice in the
-    Hydra algorithm to end-users, allowing interactive guidance of the
-    generalization process.
+    Hydra algorithm to end-users, allowing interactive guidance of the generalization process.
+  \item An evaluation of the performance of our proof-producing algorithm on LLVM IR's integer and floating point rewrites.
 \end{itemize}
 
-
-Through this work, we contribute to our vision of how compilers should be written in the future, where compiler engineers use automated and interactive theorem provers to guide their development and produce fast and provably correct programs.
+Through this work, we contribute to our vision of how compilers should be written in the future,
+where compiler engineers use automated and interactive theorem provers to guide their development and produce fast and provably correct programs.
 
 \section{Generalizing Bitvector Proofs}
 

@@ -302,7 +302,7 @@ with bitvector-expressible semantics.
 
 Consider a program containing the pattern: \inline{x * 8}, where \inline{x} is an input variable. When building an optimizing compiler, the developer might notice that this program can be made more efficient by replacing the multiplication with a left shift operation as:
 \[\mathsf{x * 8  \implies x \ll 3}\]
-This type of rewrite, where compilers transform small code sections or patterns into logically equivalent but more efficient forms, is known as a \textit{peephole optimization}~\cite{mckeemanPeephole1965}. Peephole optimizations are prominent in many modern compiler frameworks, including LLVM \cite{lattner_llvm_2004}, which has over a thousand of them \cite{menendez_termination-checking_2016}.
+This type of rewrite, where compilers transform small code sections or patterns into logically equivalent but more efficient forms, is known as a \textit{peephole optimization}~\cite{mckeeman_peephole_1965}. Peephole optimizations are prominent in many modern compiler frameworks, including LLVM \cite{lattner_llvm_2004}, which has over a thousand of them \cite{menendez_termination-checking_2016}.
 
 Going further, the developer might notice that this rewrite does not apply only when we multiply the variable \inline{x} by \inline{8}, but when we multiply \inline{x} by any constant \inline{C} which is a power of two. The full rewrite pattern then becomes:
 % sid: Use \mathsf{IsPowerOf2} for better formatting.

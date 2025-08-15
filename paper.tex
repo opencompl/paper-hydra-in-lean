@@ -246,7 +246,7 @@ Recently, approaches to peephole rewriting have centered on automatically genera
 with synthesis, e-graphs, and related approaches.
 %
 We tackle the problem of providing a \emph{generic library} for building such peephole rewrite generalizers,
-along with \emph{proofs of correctness} of these generated rewrites correct.
+along with \emph{proofs of correctness} of these generated rewrites.
 Furthermore, these synthesis algorithms have many decision points,
 and our use of an interactive theorem prover allows us to expose these decision points to end-users.
 %
@@ -310,7 +310,7 @@ Going further, the developer might notice that this rewrite does not apply only 
 where $\mathsf{IsPowerOf2(C)}$ is called the \textit{precondition} for the rewrite.
 
 The developer has now transformed the initial rewrite from its original form,
-containing the concrete constants \inline{8} and \inline{3}, to a \textit{parametrized} form containing a symbolic constant \inline{C} representing integers of an arbitrary width.
+containing the concrete constants \inline{8} and \inline{3}, to a \textit{parameterized} form containing a symbolic constant \inline{C} representing integers of an arbitrary width.
 This generalized rewrite can match more patterns across input programs and lead to more efficient code.
 
 In many compiler development workflows, deriving a rewrite from an input program and making it more general is manual,
@@ -322,16 +322,16 @@ which can verify a peephole optimization or return a counterexample.
 More recently, Mukherjee and Regehr \cite{mukherjee_hydra_2024} introduced Hydra for automatically generalizing optimizations.
 
 From a more abstract point of view, we see that these are in fact working on \emph{parametric families} of compiler IRs,
-parametrized by a natural number.
+parameterized by a natural number.
 In the case of bitvector solvers, the parameter is the bitwidth.
-In the case of LLVM, the integer types too are parametrized by bitwidth.
-In the case of floating point, the type is parametrized by both mantissa and exponent.
+In the case of LLVM, the integer types too are parameterized by bitwidth.
+In the case of floating point, the type is parameterized by both mantissa and exponent.
 We extract the core algorithmic insights from existing algorithms,
 and provide an algorithm that subsumes all the above cases: It allows for generalization of an arbitrary compiler IR
-that is parametrized by a natural number.
+that is parameterized by a natural number.
 
 Of course, there is no free lunch, and a large part of the effectiveness of the algorithm
-rely on heuristics that are specialized to the structure of the IR that is being generalized.
+relies on heuristics that are specialized to the structure of the IR that is being generalized.
 Our algorithmic description clearly decomposes the abstract algorithm from the heuristics,
 and provides points of extensibility to implement different heuristics for different IRs.
 
@@ -375,7 +375,7 @@ Overall, our contributions are:
 \begin{itemize}
 	\item Extensions to the Lean proof assistant to automatically derive encoding
     and decoding functions from parametric compiler IRs to bitvectors.
-	\item A generalization of the Hydra algorithm to synthesize generalized rewrites over parametrized compiler IRs.
+	\item A generalization of the Hydra algorithm to synthesize generalized rewrites over parameterized compiler IRs.
 	\item A library, based on the Lean extensions and the generalized Hydra algorithm which powers
     proof-producing, automatic generalization of theorems over parametric compiler IRs.
   \item A user interface that allows for exposing nondeterministic choice in the
